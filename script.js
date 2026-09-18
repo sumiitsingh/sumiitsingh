@@ -163,6 +163,21 @@ themeToggle.addEventListener("click", () => {
 });
 
 
+
+/* HERO GET STARTED — reliable anchor scroll */
+const heroGetStarted = document.getElementById("heroGetStarted");
+if (heroGetStarted) {
+    heroGetStarted.addEventListener("click", event => {
+        const servicesSection = document.getElementById("services");
+        if (!servicesSection) return;
+        event.preventDefault();
+        servicesSection.scrollIntoView({
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+            block: "start"
+        });
+    });
+}
+
 /* ================================
    SERVICE CAROUSEL
 ================================ */
@@ -940,9 +955,16 @@ serviceApply.addEventListener(
         }
 
 
-        contact.scrollIntoView({
-            behavior: "smooth"
-        });
+        if (contact) {
+            contact.scrollIntoView({
+                behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+                block: "start"
+            });
+            const firstField = contact.querySelector("#name");
+            if (firstField) {
+                window.setTimeout(() => firstField.focus({ preventScroll: true }), 350);
+            }
+        }
 
     }
 );
@@ -1126,143 +1148,302 @@ revealElements.forEach(element => {
 
 
 /* ================================
+   SUPABASE
+================================ */
+
+const SUPABASE_URL = "https://pyjbzxoqmufzfowimpei.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_xb8XttZ80WaVMjEaQ8arig_YoH-77pS";
+const AADHAAR_BUCKET = "Adhhar Documents";
+
+function supabaseHeaders(extra = {}) {
+    return {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        ...extra
+    };
+}
+
+function generateSafeFileName(originalName) {
+    const extension = originalName.split(".").pop().toLowerCase();
+    return `${crypto.randomUUID()}.${extension}`;
+}
+
+/* ================================
    CONTACT FORM
 ================================ */
 
-const contactForm =
-    document.getElementById(
-        "contactForm"
-    );
+const contactForm = document.getElementById("contactForm");
+const formMessage = document.getElementById("formMessage");
+const trackingSuccess = document.getElementById("trackingSuccess");
+const submittedTrackingId = document.getElementById("submittedTrackingId");
+const copyTrackingId = document.getElementById("copyTrackingId");
 
+// Clear the previous success state when the user starts editing a new application.
+function clearPreviousSubmissionNotice() {
+    if (trackingSuccess) trackingSuccess.hidden = true;
+    if (formMessage) formMessage.textContent = "";
+    if (submittedTrackingId) submittedTrackingId.textContent = "";
+}
 
-const formMessage =
-    document.getElementById(
-        "formMessage"
-    );
+contactForm.addEventListener("input", clearPreviousSubmissionNotice);
+contactForm.addEventListener("change", clearPreviousSubmissionNotice);
 
+contactForm.addEventListener("submit", async event => {
+    event.preventDefault();
 
-contactForm.addEventListener(
-    "submit",
-    async event => {
+    const name = document.getElementById("name").value.trim();
+    const mobile = document.getElementById("mobile").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const service = document.getElementById("serviceSelect").value;
+    const note = document.getElementById("message").value.trim();
+    const aadhaarFile = document.getElementById("aadhaarFile").files[0];
+    const submitButton = contactForm.querySelector('button[type="submit"]');
 
-        event.preventDefault();
+    if (!name || !mobile || !email || !service || !aadhaarFile) {
+        formMessage.textContent = "Please fill in all required details.";
+        return;
+    }
 
+    if (!/^[6-9][0-9]{9}$/.test(mobile)) {
+        formMessage.textContent = "Please enter a valid 10-digit mobile number.";
+        return;
+    }
 
-        const name =
-            document
-                .getElementById("name")
-                .value
-                .trim();
+    if (!["image/jpeg", "image/png"].includes(aadhaarFile.type)) {
+        formMessage.textContent = "Please upload only a JPG, JPEG or PNG image.";
+        return;
+    }
 
+    if (aadhaarFile.size > 1024 * 1024) {
+        formMessage.textContent = "Aadhaar image must be 1 MB or smaller.";
+        return;
+    }
 
-        const email =
-            document
-                .getElementById("email")
-                .value
-                .trim();
+    submitButton.disabled = true;
+    submitButton.setAttribute("aria-busy", "true");
+    formMessage.textContent = "Submitting your application...";
+    trackingSuccess.hidden = true;
 
+    let application = null;
 
-        const service =
-            document
-                .getElementById("serviceSelect")
-                .value;
-
-
-        if (
-            !name ||
-            !email ||
-            !service
-        ) {
-
-            formMessage.textContent =
-                "Please fill in the required details.";
-
-            return;
-
-        }
-
-
-        formMessage.textContent =
-            "Sending your request...";
-
-
-        const submitButton =
-            contactForm.querySelector(
-                'button[type="submit"]'
-            );
-
-
-        submitButton.disabled = true;
-
-
-        submitButton.setAttribute(
-            "aria-busy",
-            "true"
-        );
-
-
-        const formData =
-            new FormData(contactForm);
-
-
-        try {
-
-            const response =
-                await fetch(
-                    "https://formsubmit.co/ajax/sumiit.singh@zohomail.in",
-                    {
-                        method: "POST",
-
-                        body: formData,
-
-                        headers: {
-                            Accept:
-                                "application/json"
-                        }
-                    }
-                );
-
-
-            if (response.ok) {
-
-                formMessage.textContent =
-                    "Thank you! Your request has been received. We will contact you soon.";
-
-
-                contactForm.reset();
-
-            }
-
-            else {
-
-                formMessage.textContent =
-                    "Something went wrong. Please try again.";
-
-            }
-
-        }
-
-        catch (error) {
-
-            formMessage.textContent =
-                "Unable to send request. Please try again later.";
-
-        }
-
-        finally {
-
-            submitButton.disabled =
-                false;
-
-            submitButton.removeAttribute(
-                "aria-busy"
-            );
-
-        }
-
+    try {
+       const createResponse = await fetch(
+    `${SUPABASE_URL}/rest/v1/rpc/create_application`,
+    {
+        method: "POST",
+        headers: supabaseHeaders({
+            "Content-Type": "application/json"
+        }),
+        body: JSON.stringify({
+            p_name: name,
+            p_mobile: mobile,
+            p_email: email,
+            p_service: service,
+            p_note: note || null
+        })
     }
 );
 
+        if (!createResponse.ok) {
+        let details = "";
+        try {
+            const errorData = await createResponse.json();
+            details =
+                errorData?.message ||
+                errorData?.details ||
+                errorData?.hint ||
+                errorData?.code ||
+                "";
+        } catch (_) {}
+
+        throw new Error(
+            details
+                ? `Could not create application: ${details}`
+                : `Could not create application (HTTP ${createResponse.status}).`
+        );
+    }
+
+        const trackingId = await createResponse.json();
+
+if (!trackingId) {
+    throw new Error("Tracking ID was not generated.");
+}
+
+application = {
+    tracking_id: trackingId
+};
+
+        const fileName = generateSafeFileName(aadhaarFile.name);
+        const filePath = `${application.tracking_id}/${fileName}`;
+
+        const uploadResponse = await fetch(
+            `${SUPABASE_URL}/storage/v1/object/${AADHAAR_BUCKET}/${filePath}`,
+            {
+                method: "POST",
+                headers: supabaseHeaders({
+                    "Content-Type": aadhaarFile.type,
+                    "x-upsert": "false"
+                }),
+                body: aadhaarFile
+            }
+        );
+
+        if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            throw new Error(
+                errorText
+                    ? `Aadhaar upload failed: ${errorText}`
+                    : `Aadhaar upload failed (HTTP ${uploadResponse.status}).`
+            );
+        }
+
+        const updateResponse = await fetch(
+            `${SUPABASE_URL}/rest/v1/applications?tracking_id=eq.${encodeURIComponent(application.tracking_id)}`,
+            {
+                method: "PATCH",
+                headers: supabaseHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify({ aadhaar_file_path: filePath })
+            }
+        );
+
+        if (!updateResponse.ok) {
+            throw new Error("Application was created, but file information could not be saved.");
+        }
+
+        // Best-effort FormSubmit notification after the existing database workflow succeeds.
+        // No uploaded document is sent to FormSubmit; only basic application details are included.
+        let emailNotice = "";
+        try {
+            const mailData = new FormData();
+            mailData.append("_subject", `New application: ${service}`);
+            mailData.append("_template", "table");
+            mailData.append("_captcha", "false");
+            mailData.append("Name", name);
+            mailData.append("Mobile", mobile);
+            mailData.append("Email", email);
+            mailData.append("Service", service);
+            mailData.append("Note", note || "—");
+            mailData.append("Tracking ID", application.tracking_id);
+            const mailResponse = await fetch(
+                "https://formsubmit.co/ajax/sumiit.singh@zohomail.in",
+                { method: "POST", headers: { "Accept": "application/json" }, body: mailData }
+            );
+            if (!mailResponse.ok) {
+                emailNotice = " (Email notification could not be confirmed; application is saved.)";
+            }
+        } catch (mailError) {
+            emailNotice = " (Email notification could not be sent; application is saved.)";
+        }
+
+        formMessage.textContent = "Application submitted successfully." + emailNotice;
+        submittedTrackingId.textContent = application.tracking_id;
+        trackingSuccess.hidden = false;
+        document.getElementById("trackingIdInput").value = application.tracking_id;
+        contactForm.reset();
+
+    } catch (error) {
+        formMessage.textContent = error.message || "Unable to submit your application. Please try again.";
+    } finally {
+        submitButton.disabled = false;
+        submitButton.removeAttribute("aria-busy");
+    }
+});
+
+copyTrackingId.addEventListener("click", async () => {
+    const id = submittedTrackingId.textContent.trim();
+    if (!id) return;
+    try {
+        await navigator.clipboard.writeText(id);
+        copyTrackingId.textContent = "Copied";
+        setTimeout(() => copyTrackingId.textContent = "Copy Tracking ID", 1600);
+    } catch {
+        copyTrackingId.textContent = "Copy failed";
+    }
+});
+
+/* ================================
+   APPLICATION TRACKING
+================================ */
+
+const trackingForm = document.getElementById("trackingForm");
+const trackingIdInput = document.getElementById("trackingIdInput");
+const trackingMessage = document.getElementById("trackingMessage");
+const trackingResult = document.getElementById("trackingResult");
+const trackingSteps = ["Application Received", "Documents Under Review", "Processing", "Completed"];
+
+function renderTrackingResult(application) {
+    const status = application.status || "Application Received";
+    document.getElementById("resultTrackingId").textContent = application.tracking_id;
+    document.getElementById("resultService").textContent = application.service;
+    document.getElementById("resultStatus").textContent = status;
+    document.getElementById("resultUpdated").textContent = new Date(application.updated_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+    const statusIndex = trackingSteps.indexOf(status);
+    document.querySelectorAll(".status-step").forEach((step, index) => {
+        step.classList.remove("completed", "active", "rejected");
+        const dot = step.querySelector(".status-dot");
+        if (dot) dot.textContent = index + 1;
+
+        if (status === "Rejected") {
+            if (index < trackingSteps.length) {
+                if (index < trackingSteps.length - 1) {
+                    step.classList.add("completed");
+                    if (dot) dot.textContent = "✓";
+                } else {
+                    step.classList.add("rejected");
+                }
+            }
+        } else if (index < statusIndex) {
+            step.classList.add("completed");
+            if (dot) dot.textContent = "✓";
+        } else if (index === statusIndex) {
+            step.classList.add("active");
+        }
+    });
+
+    const box = document.getElementById("resultAdminMessage");
+    const text = document.getElementById("resultAdminMessageText");
+    if (application.admin_message) {
+        text.textContent = application.admin_message;
+        box.hidden = false;
+    } else {
+        text.textContent = "";
+        box.hidden = true;
+    }
+    trackingResult.hidden = false;
+}
+
+trackingForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const trackingId = trackingIdInput.value.trim().toUpperCase();
+    if (!trackingId) {
+        trackingMessage.textContent = "Please enter your Tracking ID.";
+        trackingResult.hidden = true;
+        return;
+    }
+
+    trackingMessage.textContent = "Checking your application...";
+    trackingResult.hidden = true;
+
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_public_application_status`, {
+            method: "POST",
+            headers: supabaseHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ p_tracking_id: trackingId })
+        });
+
+        if (!response.ok) throw new Error("Tracking service is unavailable.");
+        const rows = await response.json();
+        if (!rows?.length) {
+            trackingMessage.textContent = "No application found for this Tracking ID.";
+            return;
+        }
+        renderTrackingResult(rows[0]);
+        trackingMessage.textContent = "";
+    } catch (error) {
+        trackingMessage.textContent = error.message || "Unable to check the application right now.";
+    }
+});
 
 /* ================================
    WHATSAPP
